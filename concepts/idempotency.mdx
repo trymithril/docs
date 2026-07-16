@@ -5,10 +5,10 @@ description: "Make order placement safe to retry."
 
 Network calls fail halfway. A timeout doesn't tell you whether your order
 reached the exchange. To make retries safe, `POST /v1/orders` (and
-`POST /v1/complex_orders`) **require an `Idempotency-Key` header**.
+`POST /v1/complex_orders`) **require an `idempotency-key` header**.
 
 ```
-Idempotency-Key: 3f9d1c2a-7b6e-4a1f-9c2d-8e5b0a1f2c3d
+idempotency-key: 3f9d1c2a-7b6e-4a1f-9c2d-8e5b0a1f2c3d
 ```
 
 Send a unique key (a UUID is ideal) per logical order. If the same key arrives
@@ -21,7 +21,7 @@ order instead of placing a second one.
 curl -X POST https://api.trymithril.com/v1/orders \
   -H "Authorization: Bearer $MITHRIL_API_KEY" \
   -H "Content-Type: application/json" \
-  -H "Idempotency-Key: $(uuidgen)" \
+  -H "idempotency-key: $(uuidgen)" \
   -d '{ "subaccount_id": "sub_...", "market_id": "mkt_...", "token_id": "...",
         "action": "buy", "order_type": "limit", "quantity": "5", "price": "0.40" }'
 ```
@@ -32,7 +32,7 @@ import uuid
 def place(order_body):
     return s.post(
         f"{BASE}/v1/orders",
-        headers={"Idempotency-Key": str(uuid.uuid4())},
+        headers={"idempotency-key": str(uuid.uuid4())},
         json=order_body,
     ).json()
 ```

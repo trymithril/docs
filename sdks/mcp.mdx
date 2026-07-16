@@ -1,0 +1,93 @@
+---
+title: "MCP server (AI agents)"
+description: "Let Claude or any MCP agent trade through Mithril — with your risk limits enforced."
+---
+
+Mithril runs a hosted [MCP](https://modelcontextprotocol.io) server so an AI
+agent (Claude, Codex, your own) can use Mithril as tools: search markets, place
+and cancel orders, read positions/fills/portfolio, and manage risk limits —
+with every order still risk-checked server-side.
+
+It's just another consumer of the public API: it forwards each tool call to the
+gateway with **your** bearer key and holds no logic or exchange keys of its own.
+
+```
+https://mcp.trymithril.com/mcp
+```
+
+## Connect your agent
+
+Point your MCP client at the hosted endpoint and pass your Mithril API key as a
+bearer token — no install, no local binary. Use `mk_test_...` for the sandbox.
+
+<CodeGroup>
+
+```json Config
+{
+  "mcpServers": {
+    "mithril": {
+      "url": "https://mcp.trymithril.com/mcp",
+      "headers": { "Authorization": "Bearer mk_live_your_api_key" }
+    }
+  }
+}
+```
+
+```bash Claude Code
+claude mcp add mithril --transport http https://mcp.trymithril.com/mcp \
+  --header "Authorization: Bearer mk_live_your_api_key"
+```
+
+```bash Codex
+codex mcp add mithril https://mcp.trymithril.com/mcp \
+  --header "Authorization: Bearer mk_live_your_api_key"
+```
+
+</CodeGroup>
+
+The key is the same `mk_live_` / `mk_test_` key from the
+[dashboard](https://app.trymithril.com/keys) you'd use with the REST API or SDK.
+Each request builds a per-request client from your key — an unauthenticated
+call never reaches Mithril.
+
+## Tool catalog
+
+Sixteen tools, each with a typed schema the agent reads:
+
+| Group | Tools |
+| --- | --- |
+| **Markets** | `search_markets`, `get_market`, `get_orderbook`, `get_prices` |
+| **Trading** | `place_order`, `cancel_order`, `cancel_all_orders`, `list_orders`, `get_order` |
+| **Account** | `get_positions`, `get_fills`, `get_portfolio`, `get_balances`, `list_subaccounts` |
+| **Risk** | `get_risk_limits`, `set_risk_limits` |
+
+`place_order` attaches an idempotency key automatically. `cancel_all_orders` is
+a one-call kill switch. Because the same [guardrails](/guides/guardrails) apply,
+an agent physically can't place an order outside the limits you set —
+`set_risk_limits` and a low `max_order_notional` are your seatbelt for
+autonomous trading.
+
+<Tip>
+  Give an agent an `mk_test_` key first and watch it trade the sandbox before
+  handing it a live key with tight limits.
+</Tip>
+
+## Local (stdio) mode
+
+Prefer to run it yourself? The server also speaks stdio, taking a single key
+from `MITHRIL_API_KEY`:
+
+```json
+{
+  "mcpServers": {
+    "mithril": {
+      "command": "/absolute/path/to/mithril-mcp",
+      "env": { "MCP_TRANSPORT": "stdio", "MITHRIL_API_KEY": "mk_live_your_key" }
+    }
+  }
+}
+```
+
+<Card title="Set your guardrails first" icon="shield-check" href="/guides/guardrails">
+  The limits an agent trades within.
+</Card>

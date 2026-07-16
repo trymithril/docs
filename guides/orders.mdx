@@ -15,7 +15,7 @@ status model.
 curl -X POST https://api.trymithril.com/v1/orders \
   -H "Authorization: Bearer $MITHRIL_API_KEY" \
   -H "Content-Type: application/json" \
-  -H "Idempotency-Key: $(uuidgen)" \
+  -H "idempotency-key: $(uuidgen)" \
   -d '{
     "subaccount_id": "sub_...",
     "market_id": "mkt_...",
@@ -32,7 +32,7 @@ import uuid
 
 order = s.post(
     f"{BASE}/v1/orders",
-    headers={"Idempotency-Key": str(uuid.uuid4())},
+    headers={"idempotency-key": str(uuid.uuid4())},
     json={
         "subaccount_id": sub_id,
         "market_id": market["id"],
@@ -74,7 +74,7 @@ print(order["id"], order["status"])
 </ParamField>
 
 <Note>
-  The `Idempotency-Key` header is **required**. See [Idempotency](/concepts/idempotency).
+  The `idempotency-key` header is **required**. See [Idempotency](/concepts/idempotency).
 </Note>
 
 ### Response

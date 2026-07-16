@@ -7,49 +7,74 @@ Everything below talks to the public gateway at `https://api.trymithril.com`.
 The **only** thing you configure is an API key — venue auth, guardrails, and
 risk accounting happen server-side.
 
-## Prerequisites
+## Get your API key
+
+Everything runs off one `mk_live_` key. Here's the path from signup to key,
+in the [dashboard](https://app.trymithril.com):
 
 <Steps>
-  <Step title="Get access">
-    [Book a call](https://calendly.com/thekarlg) or sign up at
-    [app.trymithril.com](https://app.trymithril.com). Beta is free, no card
-    required.
+  <Step title="Create your account">
+    Sign up at [app.trymithril.com](https://app.trymithril.com) — or
+    [book 20 minutes](https://calendly.com/thekarlg) and we'll onboard you
+    personally. Your workspace is created for you on first sign-in.
   </Step>
-  <Step title="Attach exchange credentials">
-    In the dashboard, create a **subaccount** and attach your Kalshi API key or
-    Polymarket wallet key. It's envelope-encrypted and used only to sign your
-    orders.
+  <Step title="Start your beta plan">
+    Beta is free. Starting your plan is what unlocks key creation, so complete
+    this step in onboarding before heading to the keys page.
   </Step>
-  <Step title="Generate an API key">
+  <Step title="Add a subaccount and venue credentials">
+    Create a **subaccount**, then attach your Kalshi API key or Polymarket
+    wallet key to it. Credentials are envelope-encrypted and used only to sign
+    your orders — never returned, never logged.
+  </Step>
+  <Step title="Generate the API key">
     On the [API keys](https://app.trymithril.com/keys) page, create an
-    `mk_live_` key. It's shown once — copy it somewhere safe.
+    `mk_live_` key. **It's shown once** — copy it into a secret manager or env
+    var right away. (Use `mk_test_` while you wire things up.)
   </Step>
 </Steps>
 
+<Tip>
+  Keep the key in `MITHRIL_API_KEY`; every example and the SDK read it from
+  there automatically.
+</Tip>
+
+## Two ways to call the gateway
+
+The fastest path is the **Python SDK** — it handles auth, venue signing,
+idempotency, pagination, and typed errors. Or call the REST API directly with
+any HTTP client. Both talk to the same gateway; the tabs below show each.
+
+```bash
+pip install trymithril           # for the SDK
+export MITHRIL_API_KEY=mk_live_...
+```
+
 ## Your first call
 
-Set your key as an environment variable, then confirm you can reach the gateway
-by listing your subaccounts.
+Confirm you can reach the gateway by listing your subaccounts.
 
 <CodeGroup>
 
-```bash cURL
-export MITHRIL_API_KEY=mk_live_...
+```python SDK
+from trymithril import Mithril
 
+m = Mithril()  # reads MITHRIL_API_KEY
+print(m.subaccounts.list()[0].id)
+```
+
+```bash cURL
 curl https://api.trymithril.com/v1/subaccounts \
   -H "Authorization: Bearer $MITHRIL_API_KEY"
 ```
 
-```python Python
+```python requests
 import os, requests
 
 BASE = "https://api.trymithril.com"
-key = os.environ["MITHRIL_API_KEY"]
 s = requests.Session()
-s.headers["Authorization"] = f"Bearer {key}"
-
-subs = s.get(f"{BASE}/v1/subaccounts").json()["data"]
-print(subs[0]["id"])
+s.headers["Authorization"] = f"Bearer {os.environ['MITHRIL_API_KEY']}"
+print(s.get(f"{BASE}/v1/subaccounts").json()["data"][0]["id"])
 ```
 
 </CodeGroup>
@@ -69,16 +94,32 @@ A successful response is Mithril's standard list envelope:
 ## Place a risk-checked order
 
 The canonical trade is `POST /v1/orders`. Grab a `token_id` from a market's
-orderbook, then submit. Note the **`Idempotency-Key` header** — it makes a blind
-retry safe (see [Idempotency](/concepts/idempotency)).
+orderbook, then submit. The **`idempotency-key` header** makes a blind retry
+safe (see [Idempotency](/concepts/idempotency)) — the SDK attaches it for you.
 
 <CodeGroup>
+
+```python SDK
+sub = m.subaccounts.list()[0]
+market = m.markets.search("world cup", limit=1)[0]
+ob = m.markets.orderbook(market.id)
+
+order = m.orders.create(
+    subaccount_id=sub.id,
+    market_id=market.id,
+    token_id=ob.token_id,
+    action="buy",
+    quantity="5",
+    price="0.40",
+)
+print(order.id, order.status)
+```
 
 ```bash cURL
 curl -X POST https://api.trymithril.com/v1/orders \
   -H "Authorization: Bearer $MITHRIL_API_KEY" \
   -H "Content-Type: application/json" \
-  -H "Idempotency-Key: $(uuidgen)" \
+  -H "idempotency-key: $(uuidgen)" \
   -d '{
     "subaccount_id": "sub_...",
     "market_id": "mkt_...",
@@ -90,12 +131,12 @@ curl -X POST https://api.trymithril.com/v1/orders \
   }'
 ```
 
-```python Python
+```python requests
 import uuid
 
 order = s.post(
     f"{BASE}/v1/orders",
-    headers={"Idempotency-Key": str(uuid.uuid4())},
+    headers={"idempotency-key": str(uuid.uuid4())},
     json={
         "subaccount_id": "sub_...",
         "market_id": "mkt_...",
@@ -117,13 +158,47 @@ print(order["id"], order["status"])
   [Conventions](/concepts/conventions).
 </Tip>
 
+## Make it useful for you
+
+You have a key and a working call. Here's the path from "hello world" to
+Mithril running your execution and risk:
+
+<Steps>
+  <Step title="Set your guardrails">
+    Before you trade, tell Mithril your limits — max order size, daily-loss
+    circuit breaker, kill switch. Every order is checked against them
+    server-side. See [Guardrails](/guides/guardrails).
+
+    ```python
+    m.risk_limits.update(sub.id, max_order_notional="250", max_daily_loss="1000")
+    ```
+  </Step>
+  <Step title="Find markets and read depth">
+    Search across both venues and pull the book before you quote or take. See
+    [Market data](/guides/market-data).
+  </Step>
+  <Step title="Place and manage orders">
+    Vanilla limit/market orders, or hand Mithril size to
+    [work into thin books](/guides/smart-execution) with `iceberg` / `peg` /
+    `adaptive` and get a TCA receipt on every fill.
+  </Step>
+  <Step title="Watch your risk">
+    Read exposure, P&L, and per-market concentration in one call — per
+    subaccount or across the workspace. See [Risk & P&L](/guides/risk).
+  </Step>
+  <Step title="Isolate strategies">
+    Give each bot or strategy its own [subaccount](/guides/accounts) — separate
+    credentials, positions, and limits — so one can't touch another's capital.
+  </Step>
+</Steps>
+
 ## Run the full walkthrough
 
-The [`examples/`](https://github.com/mithril) folder is a runnable tour of the
-whole stack — one script per layer, the only config an API key:
+The `examples/` folder is a runnable tour of the whole stack — one script per
+layer, all built on the SDK, the only config an API key:
 
 ```bash
-pip install requests
+pip install trymithril
 export MITHRIL_API_KEY=mk_live_...
 
 python 01_account.py          # subaccounts + balances
@@ -135,10 +210,10 @@ python 06_risk.py             # exposure, P&L, fills, portfolio
 ```
 
 <CardGroup cols={2}>
-  <Card title="Authentication" icon="key" href="/authentication">
-    Bearer keys, live vs test, and how the gateway verifies you.
+  <Card title="Python SDK" icon="python" href="/sdks/python">
+    Typed models, auto-idempotency, pagination, and errors.
   </Card>
-  <Card title="Place an order" icon="arrow-right-arrow-left" href="/guides/orders">
-    Order fields, statuses, and cancellation in depth.
+  <Card title="Guardrails" icon="shield-check" href="/guides/guardrails">
+    Set the limits every order is checked against.
   </Card>
 </CardGroup>

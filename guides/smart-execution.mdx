@@ -75,7 +75,7 @@ crossing pays the taker fee, resting earns the maker rebate:
 
 ## Work an order
 
-Submit a complex order the same way as a plain one — with an `Idempotency-Key` —
+Submit a complex order the same way as a plain one — with an `idempotency-key` —
 choosing a `type` and its params:
 
 <CodeGroup>
@@ -84,7 +84,7 @@ choosing a `type` and its params:
 curl -X POST https://api.trymithril.com/v1/complex_orders \
   -H "Authorization: Bearer $MITHRIL_API_KEY" \
   -H "Content-Type: application/json" \
-  -H "Idempotency-Key: $(uuidgen)" \
+  -H "idempotency-key: $(uuidgen)" \
   -d '{
     "subaccount_id": "sub_...",
     "market_id": "mkt_...",
@@ -100,7 +100,7 @@ curl -X POST https://api.trymithril.com/v1/complex_orders \
 import uuid
 
 co = s.post(f"{BASE}/v1/complex_orders",
-    headers={"Idempotency-Key": str(uuid.uuid4())},
+    headers={"idempotency-key": str(uuid.uuid4())},
     json={
         "subaccount_id": sub_id, "market_id": market["id"], "token_id": token_id,
         "type": "adaptive", "action": "buy", "total_quantity": "500",

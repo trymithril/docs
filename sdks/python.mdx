@@ -1,0 +1,114 @@
+---
+title: "Python SDK"
+description: "The official Python client — typed, batteries-included."
+---
+
+The Python SDK wraps the gateway so you write trading logic, not HTTP. It
+handles auth, venue signing, idempotency keys, pagination, retries, and typed
+errors. The only configuration is an API key.
+
+```bash
+pip install trymithril
+```
+
+## Quickstart
+
+```python
+from trymithril import Mithril
+
+m = Mithril()  # reads MITHRIL_API_KEY (or pass api_key=...)
+
+sub = m.subaccounts.list()[0]
+market = m.markets.search("world cup", limit=1)[0]
+ob = m.markets.orderbook(market.id)
+
+order = m.orders.create(
+    subaccount_id=sub.id,
+    market_id=market.id,
+    token_id=ob.token_id,
+    action="buy",
+    quantity="5",
+    price="0.40",
+)
+print(order.id, order.status)
+```
+
+## Typed responses
+
+Responses are [Pydantic](https://docs.pydantic.dev) models — autocomplete and
+validation included, unknown fields preserved so a new API field never breaks
+you:
+
+```python
+order.status                  # typed attribute
+preview.impact.fillable_qty   # nested models
+order.model_dump()            # plain dict when you need one
+```
+
+List endpoints return a `Page` (a list with `.has_more` / `.next_cursor`).
+`.iterate()` walks every page for you:
+
+```python
+for fill in m.fills.iterate():
+    print(fill.price, fill.quantity)
+```
+
+## Errors
+
+Failed calls raise typed exceptions carrying `code`, `message`, and
+`request_id`:
+
+```python
+from trymithril import RiskLimitExceeded
+
+try:
+    m.orders.create(...)
+except RiskLimitExceeded as e:
+    # a guardrail protected you — the order never reached the venue
+    print(e.code, e.message)
+```
+
+`MithrilError` is the base; subclasses include `AuthenticationError`,
+`NotFoundError`, `BadRequestError`, `RiskLimitExceeded`, `RateLimitError`, and
+`ServerError`. `429`s are retried automatically.
+
+## Idempotency, handled for you
+
+`orders.create` and `complex_orders.create` attach an `idempotency-key`
+automatically, so a retry after a timeout never double-places. For safe retries
+across process restarts, pass your own stable key:
+
+```python
+m.orders.create(..., idempotency_key="my-strategy-signal-42")
+```
+
+## API surface
+
+| Namespace | Methods |
+|---|---|
+| `m.subaccounts` | `list`, `create`, `get`, `delete`, `balances`, `attach_credentials`, `delete_credentials` |
+| `m.markets` | `search`, `iterate`, `get`, `orderbook`, `prices`, `match` |
+| `m.orders` | `create`, `list`, `iterate`, `get`, `cancel`, `cancel_all` |
+| `m.complex_orders` | `preview`, `create`, `list`, `get`, `children`, `execution_report`, `cancel` |
+| `m.risk_limits` | `get`, `update` |
+| `m.risk` | `stats`, `pnl_history` |
+| `m.positions` | `list`, `iterate` |
+| `m.fills` | `list`, `iterate` |
+| `m.portfolio` | `get` |
+| `m.receipts` | `list` |
+| `m.analytics` | `execution` |
+
+## Configuration
+
+```python
+Mithril(
+    api_key="mk_live_...",                  # or MITHRIL_API_KEY
+    base_url="https://api.trymithril.com",  # or MITHRIL_BASE_URL
+    timeout=15.0,
+    max_retries=2,
+)
+```
+
+<Card title="Runnable examples" icon="play" href="/quickstart">
+  Six scripts — one per stack layer — all built on the SDK.
+</Card>
