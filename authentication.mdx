@@ -1,0 +1,63 @@
+---
+title: "Authentication"
+description: "How the gateway authenticates your requests."
+---
+
+Every request to `https://api.trymithril.com` is authenticated with a **bearer
+API key** in the `Authorization` header:
+
+```
+Authorization: Bearer mk_live_xxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+The public gateway validates the key, applies your [rate limits](/concepts/rate-limits),
+and forwards the request to Mithril's core over a private network. Your key
+never leaves Mithril, and your **exchange** credentials are never sent by you at
+all — they're attached once in the dashboard and stay encrypted.
+
+## Key types
+
+<CardGroup cols={2}>
+  <Card title="mk_live_" icon="bolt">
+    Live keys place real orders with real money against your attached venue
+    credentials.
+  </Card>
+  <Card title="mk_test_" icon="flask">
+    Test keys scope to a test environment for wiring up your integration
+    without touching live venues.
+  </Card>
+</CardGroup>
+
+Keys are created and revoked on the [API keys](https://app.trymithril.com/keys)
+page. The full secret is shown **once** at creation — Mithril stores only a
+SHA-256 hash and can never display it again. Rotate or revoke a key any time; a
+revoked key returns `401` immediately.
+
+## Managing keys programmatically
+
+```bash
+# Revoke a key (dashboard-authenticated)
+curl -X DELETE https://api.trymithril.com/v1/api_keys/key_123 \
+  -H "Authorization: Bearer $MITHRIL_API_KEY"
+```
+
+<Warning>
+  Treat an `mk_live_` key like a trading credential. Anyone with it can place
+  orders within your risk limits. Store it in a secret manager or environment
+  variable — **never** commit it to source control. If a key leaks, revoke it in
+  the dashboard right away.
+</Warning>
+
+## What a missing or bad key returns
+
+```json
+{
+  "error": {
+    "code": "unauthorized",
+    "message": "missing or invalid API key",
+    "request_id": "req_..."
+  }
+}
+```
+
+See [Errors](/concepts/errors) for the full error contract.

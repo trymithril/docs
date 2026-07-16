@@ -1,0 +1,70 @@
+---
+title: "Conventions"
+description: "Base URL, IDs, units, pagination — the shared rules across every endpoint."
+---
+
+## Base URL
+
+```
+https://api.trymithril.com
+```
+
+All endpoints live under `/v1`. Requests and responses are JSON with
+`snake_case` fields.
+
+## Resource IDs
+
+Every resource has a prefixed, opaque string ID. The prefix tells you the type:
+
+| Prefix | Resource |
+| --- | --- |
+| `ws_` | Workspace |
+| `sub_` | Subaccount |
+| `key_` | API key |
+| `mkt_` | Market (unified across venues) |
+| `ord_` | Order |
+| `fill_` | Fill |
+| `pos_` | Position |
+
+The `mkt_` identifier is **venue-agnostic**: the same market ID maps the same
+event across Kalshi and Polymarket, so search, quote, and trade need no
+per-exchange plumbing. To trade a specific outcome you also pass a `token_id`,
+which you read from the market's orderbook.
+
+## Units
+
+<Note>
+  Prices and quantities are passed as **strings**, not numbers, to avoid
+  floating-point precision loss on money.
+</Note>
+
+- **Price** — a probability in the range `(0, 1]`. `"0.40"` means 40¢ / 40%
+  implied probability. Mithril normalizes venue conventions (Kalshi cents,
+  Polymarket 0–1) to this single scale.
+- **Quantity** — a decimal number of shares/contracts, e.g. `"5"` or `"12.5"`.
+- **Action** — `"buy"` or `"sell"`.
+- **Side** — the outcome, `"yes"` or `"no"`.
+
+## Pagination
+
+List endpoints return a cursor envelope:
+
+```json
+{
+  "data": [ /* ...items... */ ],
+  "next_cursor": "eyJ...",
+  "has_more": true
+}
+```
+
+Pass `?cursor=` to fetch the next page and `?limit=` to set page size (default
+`50`, max `200`). When `has_more` is `false`, you've reached the end.
+
+```bash
+curl "https://api.trymithril.com/v1/fills?limit=100&cursor=eyJ..." \
+  -H "Authorization: Bearer $MITHRIL_API_KEY"
+```
+
+## Timestamps
+
+All timestamps are RFC 3339 / ISO 8601 in UTC, e.g. `2026-07-16T14:30:00Z`.

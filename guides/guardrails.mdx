@@ -1,0 +1,111 @@
+---
+title: "Guardrails"
+description: "Server-side risk limits checked before any order reaches the venue."
+---
+
+Neither Kalshi nor Polymarket gives you a max order size, a daily-loss limit, or
+a kill switch. Mithril checks **every** order against your limits **before** it's
+signed and sent — a rejection means the order never reached the exchange.
+
+## The limits
+
+Set at the workspace level and optionally overridden per subaccount (the
+effective limit is the tighter of the two):
+
+| Limit | Enforces |
+| --- | --- |
+| `max_order_notional` | Largest single order, in quote currency |
+| `max_position_per_market` | Cap on exposure to one market |
+| `max_total_notional` | Cap on total open exposure |
+| `slippage_bps` | Worst execution slippage tolerated |
+| `max_concentration_bps` | Cap on how concentrated one position can be |
+| `max_open_orders` | Ceiling on resting orders |
+| `max_daily_loss` | Circuit breaker on realized loss for the day |
+| `kill_switch` | When `true`, rejects **all** new orders instantly |
+
+## Read your limits
+
+<CodeGroup>
+
+```bash cURL
+curl https://api.trymithril.com/v1/risk_limits/sub_... \
+  -H "Authorization: Bearer $MITHRIL_API_KEY"
+```
+
+```python Python
+limits = s.get(f"{BASE}/v1/risk_limits/{sub_id}").json()
+print(limits["max_order_notional"], limits["kill_switch"])
+```
+
+</CodeGroup>
+
+```json
+{
+  "id": "rl_...",
+  "workspace_id": "ws_...",
+  "subaccount_id": "sub_...",
+  "max_order_notional": "250",
+  "max_position_per_market": "1000",
+  "max_total_notional": "5000",
+  "slippage_bps": 300,
+  "max_concentration_bps": 4000,
+  "max_open_orders": 20,
+  "max_daily_loss": "1000",
+  "kill_switch": false,
+  "created_at": "2026-07-16T14:00:00Z",
+  "updated_at": "2026-07-16T14:30:00Z"
+}
+```
+
+<Note>
+  Notional fields are decimal strings; `"0"` (or an omitted field) means
+  **unlimited**. The `PUT` body accepts the same fields —
+  `max_order_notional`, `max_position_per_market`, `max_total_notional`,
+  `slippage_bps`, `max_concentration_bps`, `max_open_orders`, `max_daily_loss`,
+  `kill_switch`.
+</Note>
+
+## Update a limit
+
+```bash
+curl -X PUT https://api.trymithril.com/v1/risk_limits/sub_... \
+  -H "Authorization: Bearer $MITHRIL_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{ "max_order_notional": "250", "max_daily_loss": "1000" }'
+```
+
+## The kill switch
+
+Flip one boolean to halt trading on a subaccount — nothing new gets through
+until you flip it back:
+
+```bash
+curl -X PUT https://api.trymithril.com/v1/risk_limits/sub_... \
+  -H "Authorization: Bearer $MITHRIL_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{ "kill_switch": true }'
+```
+
+## What a rejection looks like
+
+Submit something over your limit and the order is refused with `409` and a clear
+reason — this is the guardrail doing its job:
+
+```json
+{
+  "error": {
+    "code": "risk_limit_exceeded",
+    "message": "order notional 40000 exceeds max_order_notional 250",
+    "request_id": "req_..."
+  }
+}
+```
+
+<Tip>
+  This is exactly what `python 03_guardrails.py` demonstrates — it submits a
+  deliberately oversized order and prints the rejection.
+</Tip>
+
+<Card title="Next: Orders" icon="arrow-right-arrow-left" href="/guides/orders">
+  Place, track, and cancel — now that the guardrails are set.
+</Card>

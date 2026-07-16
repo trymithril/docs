@@ -1,0 +1,187 @@
+---
+title: "Risk & P&L"
+description: "Exposure, P&L, fills, and portfolio — one call each, per subaccount or workspace."
+---
+
+Ask a prediction-market trader their exposure to one event and most reach for a
+spreadsheet. Mithril answers directly — per subaccount or across the whole
+workspace, with venues netted into one view.
+
+## Risk statistics
+
+<CodeGroup>
+
+```bash cURL
+# Per subaccount
+curl https://api.trymithril.com/v1/risk/stats/sub_... \
+  -H "Authorization: Bearer $MITHRIL_API_KEY"
+
+# Workspace-wide
+curl https://api.trymithril.com/v1/risk/stats \
+  -H "Authorization: Bearer $MITHRIL_API_KEY"
+```
+
+```python Python
+stats = s.get(f"{BASE}/v1/risk/stats/{sub_id}").json()
+print(stats["gross_exposure"], stats["unrealized_pnl"], stats["largest_position_pct_bps"])
+```
+
+</CodeGroup>
+
+```json
+{
+  "workspace_id": "ws_...",
+  "subaccount_id": "sub_...",
+  "gross_exposure": "1840.00",
+  "market_value": "1902.50",
+  "marks_stale": false,
+  "unrealized_pnl": "62.50",
+  "realized_pnl_today": "18.20",
+  "realized_pnl_total": "412.90",
+  "open_order_count": 3,
+  "resting_notional": "250.00",
+  "position_count": 7,
+  "market_count": 5,
+  "largest_position_pct_bps": 3200,
+  "per_market_exposure": [ { "market_id": "mkt_...", "exposure": "588.00", "pct_bps": 3200 } ],
+  "limit_utilization": {
+    "max_total_notional": { "limit": "5000", "used": "1840.00", "pct_bps": 3680 }
+  },
+  "kill_switch": false,
+  "as_of": "2026-07-16T14:32:00Z"
+}
+```
+
+<Note>
+  Percentages are in **basis points** (`largest_position_pct_bps: 3200` = 32%).
+  `marks_stale: true` warns that mark prices couldn't be refreshed, so
+  mark-to-market values are best-effort.
+</Note>
+
+## Daily P&L history
+
+```bash
+curl https://api.trymithril.com/v1/risk/pnl_history \
+  -H "Authorization: Bearer $MITHRIL_API_KEY"
+```
+
+```json
+{
+  "workspace_id": "ws_...",
+  "subaccount_id": "sub_...",
+  "days": 30,
+  "points": [
+    { "date": "2026-07-16", "realized_pnl": "18.20", "fees": "1.05",
+      "volume": "540.00", "fill_count": 6, "cumulative_realized_pnl": "412.90" }
+  ],
+  "total_realized_pnl": "412.90",
+  "total_fees": "27.40",
+  "total_volume": "18240.00",
+  "total_fills": 214,
+  "as_of": "2026-07-16T14:32:00Z"
+}
+```
+
+## Fills
+
+Every execution, newest first — with fees computed from each venue's schedule:
+
+<CodeGroup>
+
+```bash cURL
+curl "https://api.trymithril.com/v1/fills?limit=50" \
+  -H "Authorization: Bearer $MITHRIL_API_KEY"
+```
+
+```python Python
+fills = s.get(f"{BASE}/v1/fills", params={"limit": 50}).json()["data"]
+for f in fills:
+    print(f["side"], f["quantity"], "@", f["price"], "fee", f["fee"])
+```
+
+</CodeGroup>
+
+Each fill (`FillView`):
+
+```json
+{
+  "id": "fill_...",
+  "subaccount_id": "sub_...",
+  "order_id": "ord_...",
+  "exchange": "polymarket",
+  "market_id": "mkt_...",
+  "token_id": "7194...",
+  "side": "yes",
+  "action": "buy",
+  "price": "0.43",
+  "quantity": "125",
+  "fee": "1.07",
+  "realized_pnl": "0",
+  "created_at": "2026-07-16T14:30:05Z"
+}
+```
+
+## Positions and portfolio
+
+`GET /v1/positions` returns a paginated list of `PositionView`:
+
+```json
+{
+  "data": [
+    {
+      "id": "pos_...",
+      "subaccount_id": "sub_...",
+      "exchange": "polymarket",
+      "market_id": "mkt_...",
+      "token_id": "7194...",
+      "side": "yes",
+      "quantity": "125",
+      "cost_basis": "53.75",
+      "avg_price": "0.43",
+      "mark_price": "0.44",
+      "marked_at": "2026-07-16T14:32:00Z",
+      "created_at": "2026-07-16T14:30:05Z",
+      "updated_at": "2026-07-16T14:32:00Z"
+    }
+  ],
+  "has_more": false
+}
+```
+
+`GET /v1/portfolio` aggregates positions for a scope (`PortfolioView`):
+
+```json
+{
+  "workspace_id": "ws_...",
+  "subaccount_id": "sub_...",
+  "position_count": 7,
+  "total_cost_basis": "1840.00",
+  "positions": [ /* ...PositionView... */ ]
+}
+```
+
+<Note>
+  Mark-to-market value and P&L live on [risk stats](#risk-statistics); the
+  portfolio view is positions + aggregate cost basis.
+</Note>
+
+Two more reporting endpoints:
+
+| Endpoint | Returns |
+| --- | --- |
+| `GET /v1/receipts` | Execution receipts (arrival vs achieved vs naive), one per worked order |
+| `GET /v1/analytics/execution` | Predicted-vs-realized analytics per fill: `arrival_mid`, `predicted_avg`, `realized_avg`, `slippage_bps`, `prediction_error_bps` |
+
+```bash
+curl https://api.trymithril.com/v1/portfolio \
+  -H "Authorization: Bearer $MITHRIL_API_KEY"
+```
+
+<Tip>
+  `python 06_risk.py` walks all of these in one run — a good template for a
+  monitoring dashboard or an end-of-day report.
+</Tip>
+
+<Card title="Full endpoint reference" icon="code" href="/api-reference/overview">
+  Every path, method, and auth requirement.
+</Card>

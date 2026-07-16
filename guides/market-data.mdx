@@ -1,0 +1,117 @@
+---
+title: "Market data"
+description: "Search markets, read the orderbook, pull prices — normalized across venues."
+---
+
+Market data is one normalized plane across Kalshi and Polymarket: prices are
+probabilities in `(0, 1)`, books are unified, and one `mkt_` ID maps the same
+event on both venues.
+
+## Search markets
+
+Discovery is search-driven. Pass a `query` (and optional `limit`):
+
+<CodeGroup>
+
+```bash cURL
+curl "https://api.trymithril.com/v1/markets?query=world%20cup&limit=5" \
+  -H "Authorization: Bearer $MITHRIL_API_KEY"
+```
+
+```python Python
+mkts = s.get(f"{BASE}/v1/markets", params={"query": "world cup", "limit": 5}).json()["data"]
+market = mkts[0]
+print(market["id"], market.get("question"))
+```
+
+</CodeGroup>
+
+Each result (`MarketView`) in the `data` array:
+
+```json
+{
+  "id": "mkt_...",
+  "exchange": "polymarket",
+  "exchange_market_id": "0x...",
+  "question": "Will Argentina win the World Cup?",
+  "outcomes": [
+    { "token_id": "7194...", "label": "Yes", "price": "0.42" },
+    { "token_id": "1088...", "label": "No",  "price": "0.58" }
+  ],
+  "status": "open",
+  "close_time": "2026-12-18T00:00:00Z",
+  "volume_24h": "48210.00",
+  "resolved": false
+}
+```
+
+## Read the orderbook
+
+The orderbook gives you a tradable `token_id` (which outcome you're buying) plus
+live depth:
+
+<CodeGroup>
+
+```bash cURL
+curl https://api.trymithril.com/v1/markets/mkt_.../orderbook \
+  -H "Authorization: Bearer $MITHRIL_API_KEY"
+```
+
+```python Python
+ob = s.get(f"{BASE}/v1/markets/{market['id']}/orderbook").json()
+token_id = ob["token_id"]
+best_bid = float(ob["bids"][0]["price"]) if ob["bids"] else 0.0
+best_ask = float(ob["asks"][0]["price"]) if ob["asks"] else 1.0
+print(f"bid {best_bid:.3f} / ask {best_ask:.3f}  spread {best_ask - best_bid:.3f}")
+```
+
+</CodeGroup>
+
+The orderbook (`OrderbookView`) — bids and asks are `{price, size}` levels:
+
+```json
+{
+  "market_id": "mkt_...",
+  "token_id": "7194...",
+  "bids": [ { "price": "0.41", "size": "1200" }, { "price": "0.40", "size": "3400" } ],
+  "asks": [ { "price": "0.43", "size": "900" },  { "price": "0.44", "size": "2600" } ]
+}
+```
+
+## Prices and history
+
+| Endpoint | Returns |
+| --- | --- |
+| `GET /v1/markets/{id}` | Full market detail |
+| `GET /v1/markets/{id}/orderbook` | Live L2 book + `token_id` |
+| `GET /v1/markets/{id}/prices` | Recent price series |
+| `POST /v1/markets/match` | Map an event to its equivalent `mkt_` across venues |
+
+```bash
+curl "https://api.trymithril.com/v1/markets/mkt_.../prices?limit=50" \
+  -H "Authorization: Bearer $MITHRIL_API_KEY"
+```
+
+`GET /v1/markets/{id}/prices` returns a `PricesView`:
+
+```json
+{
+  "market_id": "mkt_...",
+  "token_id": "7194...",
+  "interval": "1h",
+  "points": [ { "timestamp": "2026-07-16T13:00:00Z", "price": "0.41" } ]
+}
+```
+
+`POST /v1/markets/match` takes `{ "exchange": "kalshi", "exchange_market_id": "..." }`
+and returns the unified `mkt_` market, creating the mapping on first sight.
+
+<Note>
+  Market data today is served over REST. If you need the freshest book, poll the
+  orderbook endpoint; the [smart execution](/guides/smart-execution) engine reads
+  live depth for you when working an order.
+</Note>
+
+<Card title="Next: Guardrails" icon="shield-check" href="/guides/guardrails">
+  Set the limits every order is checked against before you place one.
+</Card>

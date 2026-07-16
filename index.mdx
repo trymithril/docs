@@ -1,20 +1,72 @@
 ---
-title: "Introduction"
-description: "Welcome to your project"
+title: "Mithril"
+description: "One REST API for trading Kalshi and Polymarket — with smart execution, hard risk limits, and keys that stay yours."
 ---
 
-Write a short description of your product here. What it does, who it's for, and what they can accomplish with it.
+Mithril is a single REST API (and a hosted MCP server) for trading **Kalshi**
+and **Polymarket** — both live today. You attach your own exchange credentials
+to a subaccount; Mithril signs your orders, works them into thin books under a
+slippage cap, checks every order against server-side risk limits, and gives you
+one unified view of positions, fills, and P&L across venues.
 
-<Tip>
-  Ready to make this your own? Start by editing this page. Update your `docs.json` file to customize your site. Then fill out the [Quickstart](/quickstart) page.
-</Tip>
+The goal is simple: **you spend your time on alpha, and Mithril handles the
+plumbing** — venue auth, order execution, guardrails, and risk accounting.
 
-<Card title="Quickstart" icon="rocket" href="/quickstart">
-  This card links to the quickstart page in your project.
-</Card>
-<Card title="Components" icon="puzzle-piece" href="https://mintlify.com/docs/components">
-  Add cards, callouts, steps, tabs, and more to design and structure your pages.
-</Card>
-<Card title="Settings" icon="gear" href="https://mintlify.com/docs/organize/settings">
-  Set your site name, branding, and navigation in the `docs.json` file.
-</Card>
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Go from an API key to a risk-checked order in a few minutes.
+  </Card>
+  <Card title="Authentication" icon="key" href="/authentication">
+    How bearer keys work and how the gateway authenticates you.
+  </Card>
+  <Card title="Place an order" icon="arrow-right-arrow-left" href="/guides/orders">
+    The canonical `POST /v1/orders` call, end to end.
+  </Card>
+  <Card title="API explorer" icon="code" href="https://api.trymithril.com/docs">
+    The full, machine-generated endpoint reference (Redoc).
+  </Card>
+</CardGroup>
+
+## Why teams use Mithril
+
+<Steps>
+  <Step title="One API, both venues">
+    Kalshi's RSA request signing and Polymarket's EIP-712 wallet signing,
+    allowances, and proxy wallets are handled server-side. You send JSON to one
+    base URL; a unified `mkt_` identifier maps the same event across venues.
+  </Step>
+  <Step title="Smart execution">
+    Preview an order's impact against live depth, then work it with
+    `smart_taker`, `iceberg`, `peg`, or `adaptive` strategies under a slippage
+    cap. Every fill gets an execution receipt: arrival mid, achieved average
+    price, what a naive sweep would have cost, and fees per venue.
+  </Step>
+  <Step title="Risk on every order">
+    Notional caps, per-market limits, concentration, max daily loss, and a kill
+    switch — enforced before the venue ever sees the order. Isolate strategies
+    with subaccounts, each with its own credentials and limits.
+  </Step>
+  <Step title="Keys stay yours">
+    Your Kalshi API key or Polymarket wallet key is envelope-encrypted (X25519)
+    and decrypted only in memory to sign an order. Never logged, never returned.
+    Mithril never takes custody of funds.
+  </Step>
+</CardGroup>
+</Steps>
+
+## The stack, one layer at a time
+
+| Layer | What it gives you | Start here |
+| --- | --- | --- |
+| Accounts | Subaccounts + unified balances | [Accounts](/guides/accounts) |
+| Market data | Search, orderbook, prices across venues | [Market data](/guides/market-data) |
+| Guardrails | Pre-trade risk checks, kill switch | [Guardrails](/guides/guardrails) |
+| Orders | Place, track, cancel | [Orders](/guides/orders) |
+| Smart execution | Impact preview, worked orders, TCA | [Smart execution](/guides/smart-execution) |
+| Risk & P&L | Exposure, P&L, fills, portfolio | [Risk](/guides/risk) |
+
+<Note>
+  Mithril is **free during beta** (no card required), and every trader is
+  onboarded personally. [Book 20 minutes](https://calendly.com/thekarlg) to get
+  set up.
+</Note>

@@ -1,0 +1,53 @@
+---
+title: "Errors"
+description: "The single error envelope and what each status means."
+---
+
+Every error — from the gateway or from Mithril's core — renders as one shape:
+
+```json
+{
+  "error": {
+    "code": "risk_limit_exceeded",
+    "message": "order notional 40000 exceeds max_order_notional 250",
+    "request_id": "req_9f3a..."
+  }
+}
+```
+
+- **`code`** — a stable, machine-readable string you can branch on.
+- **`message`** — a human-readable explanation. Safe to log and show.
+- **`request_id`** — include this when you contact support; it ties your request
+  to our logs.
+
+## Status codes
+
+| Status | Meaning | Typical `code` |
+| --- | --- | --- |
+| `400` | Malformed request or missing required field/header | `bad_request` |
+| `401` | Missing, invalid, or revoked API key | `unauthorized` |
+| `403` | Authenticated but not allowed | `forbidden` |
+| `404` | Resource not found (or not in your workspace) | `not_found` |
+| `409` | Conflict — e.g. a guardrail rejection | `risk_limit_exceeded` |
+| `422` | Semantically invalid (e.g. price out of range) | `invalid_argument` |
+| `429` | Rate limited — back off and retry | `rate_limited` |
+| `5xx` | Upstream/venue failure | `internal`, `upstream_error` |
+
+<Note>
+  A guardrail rejection is a **normal, expected** response, not a bug. It means
+  Mithril protected you — the order never reached the venue. See
+  [Guardrails](/guides/guardrails).
+</Note>
+
+## Handling errors
+
+```python
+resp = s.post(f"{BASE}/v1/orders", headers=idem, json=body)
+if not resp.ok:
+    err = resp.json()["error"]
+    if err["code"] == "risk_limit_exceeded":
+        # tighten size or raise the limit — this is a guardrail doing its job
+        ...
+    else:
+        raise RuntimeError(f"[{resp.status_code}] {err['message']} ({err['request_id']})")
+```

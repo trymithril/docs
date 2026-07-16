@@ -1,47 +1,144 @@
 ---
 title: "Quickstart"
-description: "Begin with a guide on the fastest path to a successful outcome"
+description: "From an API key to a risk-checked order in a few minutes."
 ---
 
-Describe how someone begins using your product. What is the first thing they need to do? Are there any prerequisites?
-
-A quickstart should take someone from zero to using your product. They'll get a quick win and a sense of what they can accomplish.
+Everything below talks to the public gateway at `https://api.trymithril.com`.
+The **only** thing you configure is an API key — venue auth, guardrails, and
+risk accounting happen server-side.
 
 ## Prerequisites
 
-Before you begin, you must have:
-
-- Requirement one (for example, Node.js 18+, a free account, an API key)
-- Requirement two (for example, a compatible device, a compatible browser, a compatible operating system)
-
-## Get started
-
 <Steps>
-  <Step title="Install">
-    Describe how to install your product or sign up.
-
-    ```bash
-    npm install your-package
-    ```
+  <Step title="Get access">
+    [Book a call](https://calendly.com/thekarlg) or sign up at
+    [app.trymithril.com](https://app.trymithril.com). Beta is free, no card
+    required.
   </Step>
-  <Step title="Configure">
-    Describe any setup or configuration needed before first use.
-
-    ```bash
-    your-cli init
-    ```
+  <Step title="Attach exchange credentials">
+    In the dashboard, create a **subaccount** and attach your Kalshi API key or
+    Polymarket wallet key. It's envelope-encrypted and used only to sign your
+    orders.
   </Step>
-  <Step title="Run it">
-    Show the first thing a user does to see it working.
-
-    ```bash
-    your-cli start
-    ```
+  <Step title="Generate an API key">
+    On the [API keys](https://app.trymithril.com/keys) page, create an
+    `mk_live_` key. It's shown once — copy it somewhere safe.
   </Step>
 </Steps>
 
-<Tip>
-  Give people a way to get help. This could be a link to a support page, a chat with a customer support agent, or a forum for your product.
+## Your first call
 
-  Example: Need help? Reach out to us at [support@yourcompany.com](mailto:support@yourcompany.com).
+Set your key as an environment variable, then confirm you can reach the gateway
+by listing your subaccounts.
+
+<CodeGroup>
+
+```bash cURL
+export MITHRIL_API_KEY=mk_live_...
+
+curl https://api.trymithril.com/v1/subaccounts \
+  -H "Authorization: Bearer $MITHRIL_API_KEY"
+```
+
+```python Python
+import os, requests
+
+BASE = "https://api.trymithril.com"
+key = os.environ["MITHRIL_API_KEY"]
+s = requests.Session()
+s.headers["Authorization"] = f"Bearer {key}"
+
+subs = s.get(f"{BASE}/v1/subaccounts").json()["data"]
+print(subs[0]["id"])
+```
+
+</CodeGroup>
+
+A successful response is Mithril's standard list envelope:
+
+```json
+{
+  "data": [
+    { "id": "sub_wdzt3wugmlu4kadia7nuc2dz", "name": "main", "workspace_id": "ws_..." }
+  ],
+  "next_cursor": null,
+  "has_more": false
+}
+```
+
+## Place a risk-checked order
+
+The canonical trade is `POST /v1/orders`. Grab a `token_id` from a market's
+orderbook, then submit. Note the **`Idempotency-Key` header** — it makes a blind
+retry safe (see [Idempotency](/concepts/idempotency)).
+
+<CodeGroup>
+
+```bash cURL
+curl -X POST https://api.trymithril.com/v1/orders \
+  -H "Authorization: Bearer $MITHRIL_API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -d '{
+    "subaccount_id": "sub_...",
+    "market_id": "mkt_...",
+    "token_id": "7194...",
+    "action": "buy",
+    "order_type": "limit",
+    "quantity": "5",
+    "price": "0.40"
+  }'
+```
+
+```python Python
+import uuid
+
+order = s.post(
+    f"{BASE}/v1/orders",
+    headers={"Idempotency-Key": str(uuid.uuid4())},
+    json={
+        "subaccount_id": "sub_...",
+        "market_id": "mkt_...",
+        "token_id": "7194...",
+        "action": "buy",
+        "order_type": "limit",
+        "quantity": "5",     # decimal STRING
+        "price": "0.40",     # probability in (0, 1] as a STRING
+    },
+).json()
+print(order["id"], order["status"])
+```
+
+</CodeGroup>
+
+<Tip>
+  Prices are probabilities in `(0, 1]` and quantities are decimals — both passed
+  as **strings** to avoid float precision loss. See
+  [Conventions](/concepts/conventions).
 </Tip>
+
+## Run the full walkthrough
+
+The [`examples/`](https://github.com/mithril) folder is a runnable tour of the
+whole stack — one script per layer, the only config an API key:
+
+```bash
+pip install requests
+export MITHRIL_API_KEY=mk_live_...
+
+python 01_account.py          # subaccounts + balances
+python 02_market_data.py      # search, orderbook, prices
+python 03_guardrails.py       # watch the risk engine reject an oversized order
+python 04_orders.py --live    # limit order lifecycle
+python 05_smart_execution.py  # impact preview + adaptive execution + TCA
+python 06_risk.py             # exposure, P&L, fills, portfolio
+```
+
+<CardGroup cols={2}>
+  <Card title="Authentication" icon="key" href="/authentication">
+    Bearer keys, live vs test, and how the gateway verifies you.
+  </Card>
+  <Card title="Place an order" icon="arrow-right-arrow-left" href="/guides/orders">
+    Order fields, statuses, and cancellation in depth.
+  </Card>
+</CardGroup>

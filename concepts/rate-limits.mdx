@@ -1,0 +1,50 @@
+---
+title: "Rate limits"
+description: "How the gateway paces requests, and how to handle 429s."
+---
+
+The gateway rate-limits per API key. Limits are split into two classes so that
+reads never starve your ability to place and cancel orders:
+
+| Class | Endpoints | Notes |
+| --- | --- | --- |
+| **Read** | `GET` market data, positions, fills, risk stats | Higher ceiling |
+| **Write** | `POST`/`PUT`/`DELETE` — orders, cancels, limit changes | Lower ceiling; the critical path |
+
+Mithril also absorbs each **venue's** own limits server-side (Polymarket's
+opaque Cloudflare pacing, Kalshi's tiered token buckets), so you code against
+one predictable ceiling instead of two moving ones.
+
+## When you're limited
+
+A throttled request returns `429` with the standard [error envelope](/concepts/errors):
+
+```json
+{ "error": { "code": "rate_limited", "message": "rate limit exceeded", "request_id": "req_..." } }
+```
+
+Back off and retry. A simple exponential backoff with jitter is enough:
+
+```python
+import time, random
+
+def with_backoff(fn, tries=5):
+    for i in range(tries):
+        resp = fn()
+        if resp.status_code != 429:
+            return resp
+        time.sleep(min(2 ** i, 8) + random.random())
+    return resp
+```
+
+<Tip>
+  Prioritize cancels over new orders in your own client, and prefer
+  [worked orders](/guides/smart-execution) over hand-rolled cancel/replace
+  loops — Mithril's execution engine paces child orders within venue limits for
+  you.
+</Tip>
+
+<Note>
+  Need higher throughput for a market-making strategy?
+  [Talk to us](https://calendly.com/thekarlg) — limits are lifted per desk.
+</Note>

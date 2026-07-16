@@ -1,0 +1,87 @@
+---
+title: "API reference"
+description: "Every endpoint the gateway serves, with a live, machine-generated spec."
+---
+
+The complete, always-current reference — every path, method, auth requirement,
+and rate-limit class — is generated directly from the gateway's route table and
+served as an interactive explorer and an OpenAPI 3.1 document. Request and
+response **contracts** (field-by-field JSON) live in the [guides](/guides/orders),
+alongside worked examples for each endpoint.
+
+<CardGroup cols={2}>
+  <Card title="Interactive explorer" icon="code" href="https://api.trymithril.com/docs">
+    Browse and read every endpoint (Redoc).
+  </Card>
+  <Card title="OpenAPI spec" icon="file-code" href="https://api.trymithril.com/openapi.json">
+    Import into Postman, Insomnia, or your own codegen.
+  </Card>
+</CardGroup>
+
+## Endpoint map
+
+All endpoints are under `https://api.trymithril.com/v1` and require a
+[bearer key](/authentication).
+
+### Accounts
+| Method | Path |
+| --- | --- |
+| `GET` | `/v1/subaccounts` |
+| `POST` | `/v1/subaccounts` |
+| `GET` | `/v1/subaccounts/{id}` |
+| `DELETE` | `/v1/subaccounts/{id}` |
+| `PUT` | `/v1/subaccounts/{id}/credentials` |
+| `DELETE` | `/v1/subaccounts/{id}/credentials/{exchange}` |
+| `GET` | `/v1/subaccounts/{id}/balances` |
+
+### Market data
+| Method | Path |
+| --- | --- |
+| `GET` | `/v1/markets` |
+| `GET` | `/v1/markets/{id}` |
+| `GET` | `/v1/markets/{id}/orderbook` |
+| `GET` | `/v1/markets/{id}/prices` |
+| `POST` | `/v1/markets/match` |
+
+### Orders
+| Method | Path |
+| --- | --- |
+| `POST` | `/v1/orders` |
+| `GET` | `/v1/orders` |
+| `GET` | `/v1/orders/{id}` |
+| `POST` | `/v1/orders/{id}/cancel` |
+| `POST` | `/v1/orders/cancel_all` |
+
+### Smart execution
+| Method | Path |
+| --- | --- |
+| `POST` | `/v1/complex_orders` |
+| `POST` | `/v1/complex_orders/preview` |
+| `GET` | `/v1/complex_orders` |
+| `GET` | `/v1/complex_orders/{id}` |
+| `GET` | `/v1/complex_orders/{id}/children` |
+| `GET` | `/v1/complex_orders/{id}/execution_report` |
+| `POST` | `/v1/complex_orders/{id}/cancel` |
+
+### Guardrails
+| Method | Path |
+| --- | --- |
+| `GET` / `PUT` | `/v1/risk_limits` |
+| `GET` / `PUT` | `/v1/risk_limits/{subaccount_id}` |
+
+### Risk, P&L & reporting
+| Method | Path |
+| --- | --- |
+| `GET` | `/v1/risk/stats` |
+| `GET` | `/v1/risk/stats/{subaccount_id}` |
+| `GET` | `/v1/risk/pnl_history` |
+| `GET` | `/v1/positions` |
+| `GET` | `/v1/fills` |
+| `GET` | `/v1/portfolio` |
+| `GET` | `/v1/receipts` |
+| `GET` | `/v1/analytics/execution` |
+
+<Note>
+  Trading through an AI agent instead? The same operations are exposed as tools
+  on the hosted MCP server at `https://mcp.trymithril.com/mcp`.
+</Note>

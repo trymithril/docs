@@ -1,0 +1,178 @@
+---
+title: "Smart execution"
+description: "Preview impact, work orders into thin books, and measure every fill."
+---
+
+Prediction-market books are thin — a large marketable order clips the print and
+attracts adverse selection. Neither venue offers iceberg, TWAP, or pegged orders.
+Mithril's execution engine does: preview the impact of an order, then let Mithril
+**work** it under a slippage cap and hand you a transaction-cost report at the
+end.
+
+## Preview impact before you trade
+
+`POST /v1/complex_orders/preview` estimates fillable size and average price
+against live depth, and recommends a strategy:
+
+<CodeGroup>
+
+```bash cURL
+curl -X POST https://api.trymithril.com/v1/complex_orders/preview \
+  -H "Authorization: Bearer $MITHRIL_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{ "market_id": "mkt_...", "token_id": "...", "action": "buy", "quantity": "500" }'
+```
+
+```python Python
+preview = s.post(f"{BASE}/v1/complex_orders/preview", json={
+    "market_id": market["id"], "token_id": token_id,
+    "action": "buy", "quantity": "500",
+}).json()
+print(preview["impact"]["fillable_qty"], preview["impact"]["avg_price"])
+print(preview["recommended_plan"]["strategy"], "—", preview["recommended_plan"]["reason"])
+```
+
+</CodeGroup>
+
+The response makes the walk-the-book impact and the fee trade-off explicit —
+crossing pays the taker fee, resting earns the maker rebate:
+
+```json
+{
+  "impact": {
+    "action": "buy",
+    "requested_qty": "500",
+    "fillable_qty": "500",
+    "avg_price": "0.436",
+    "worst_price": "0.45",
+    "mid": "0.42",
+    "notional_cost": "218.00",
+    "slippage_bps": 380,
+    "levels_consumed": 4,
+    "complete": true
+  },
+  "recommended_plan": { "strategy": "iceberg", "clip_qty": "125", "slices": 4,
+                        "reason": "size exceeds top-of-book; work it in clips as liquidity refills" },
+  "fee_rate": 0.02,
+  "taker": { "taker_fee": "4.36", "maker_rebate": "0", "all_in_avg_price": "0.445", "all_in_cost": "222.36", "fee_bps": 200 },
+  "maker": { "taker_fee": "0", "maker_rebate": "2.18", "all_in_avg_price": "0.432", "all_in_cost": "215.82", "fee_bps": 0 }
+}
+```
+
+<Note>
+  `fillable_qty`, `avg_price`, and `slippage_bps` live under the **`impact`**
+  object; `recommended_plan` is top-level.
+</Note>
+
+## Strategies
+
+| Strategy | Use it when |
+| --- | --- |
+| `smart_taker` | Take liquidity up to a worst price, sweeping only what's cheap |
+| `iceberg` | Post size in clips so you don't show the whole hand |
+| `peg` | Rest passively at/inside the spread, repegging within a band |
+| `adaptive` | "Just get me best execution" — Mithril balances urgency vs impact |
+
+## Work an order
+
+Submit a complex order the same way as a plain one — with an `Idempotency-Key` —
+choosing a `type` and its params:
+
+<CodeGroup>
+
+```bash cURL
+curl -X POST https://api.trymithril.com/v1/complex_orders \
+  -H "Authorization: Bearer $MITHRIL_API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -d '{
+    "subaccount_id": "sub_...",
+    "market_id": "mkt_...",
+    "token_id": "...",
+    "type": "adaptive",
+    "action": "buy",
+    "total_quantity": "500",
+    "adaptive": { "limit_price": "0.62", "urgency": "low", "max_duration_s": 300 }
+  }'
+```
+
+```python Python
+import uuid
+
+co = s.post(f"{BASE}/v1/complex_orders",
+    headers={"Idempotency-Key": str(uuid.uuid4())},
+    json={
+        "subaccount_id": sub_id, "market_id": market["id"], "token_id": token_id,
+        "type": "adaptive", "action": "buy", "total_quantity": "500",
+        "adaptive": {"limit_price": "0.62", "urgency": "low", "max_duration_s": 300},
+    }).json()
+cid = co["id"]
+```
+
+</CodeGroup>
+
+## Watch it work
+
+`GET /v1/complex_orders/{id}/children` returns the plan's child orders with live
+queue positions:
+
+```json
+{
+  "children": [
+    { "order_id": "ord_...", "status": "filled", "quantity": "125", "price": "0.43",
+      "traded_qty": "125", "average_price": "0.429", "created_at": "2026-07-16T14:30:05Z" },
+    { "order_id": "ord_...", "status": "open", "quantity": "125", "price": "0.43",
+      "traded_qty": "0", "average_price": "0", "created_at": "2026-07-16T14:31:10Z",
+      "queue_ahead": "800" }
+  ]
+}
+```
+
+## Read the execution report (TCA)
+
+`GET /v1/complex_orders/{id}/execution_report` is your **receipt**: what you
+paid versus arrival, versus estimate, versus a naive sweep — measured on your
+own fills, not claimed.
+
+```json
+{
+  "action": "buy",
+  "total_quantity": "500",
+  "filled_qty": "500",
+  "realized_avg_price": "0.431",
+  "arrival_mid_price": "0.42",
+  "estimated_avg_price": "0.436",
+  "naive_sweep_avg_price": "0.448",
+  "implementation_shortfall_bps": 262,
+  "estimate_error_bps": 50,
+  "realized_fees_paid": "2.15",
+  "realized_all_in_avg_price": "0.435",
+  "naive_sweep_all_in_price": "0.457",
+  "savings_vs_naive": "11.00",
+  "savings_vs_naive_bps": 220,
+  "benchmark_available": true,
+  "children": [ /* ...ChildFillView... */ ]
+}
+```
+
+<ResponseField name="savings_vs_naive" type="string">
+  Quote-currency saved versus sweeping the book naively — your number, measured
+  per fill. `benchmark_available: false` means there wasn't enough book data to
+  compute it.
+</ResponseField>
+
+Cancel the remainder any time:
+
+```bash
+curl -X POST https://api.trymithril.com/v1/complex_orders/co_.../cancel \
+  -H "Authorization: Bearer $MITHRIL_API_KEY"
+```
+
+<Note>
+  Conditional orders (take-profit / stop-loss / stop) are on the roadmap and are
+  rejected at submission today, so you never get a plan that nothing will act on.
+</Note>
+
+<Card title="Next: Risk & P&L" icon="chart-pie" href="/guides/risk">
+  See the exposure and P&L those fills produced.
+</Card>

@@ -1,0 +1,138 @@
+---
+title: "Accounts"
+description: "Workspaces, subaccounts, and unified balances."
+---
+
+Mithril's tenancy has three levels:
+
+- **Workspace** — your organization. Created automatically on signup.
+- **Subaccount** — an isolated strategy or client, each with its own attached
+  exchange credentials, positions, and [risk limits](/guides/guardrails).
+- **Credentials** — your Kalshi API key or Polymarket wallet key, attached to a
+  subaccount, envelope-encrypted, used only to sign orders.
+
+Isolating strategies in subaccounts means a runaway bot in one can't touch the
+capital or limits of another.
+
+## List subaccounts
+
+Most calls take a `subaccount_id`. Discover yours instead of hardcoding it:
+
+<CodeGroup>
+
+```bash cURL
+curl https://api.trymithril.com/v1/subaccounts \
+  -H "Authorization: Bearer $MITHRIL_API_KEY"
+```
+
+```python Python
+subs = s.get(f"{BASE}/v1/subaccounts").json()["data"]
+sub_id = subs[0]["id"]
+```
+
+</CodeGroup>
+
+A subaccount (`SubaccountView`):
+
+```json
+{
+  "data": [
+    {
+      "id": "sub_wdzt3wugmlu4kadia7nuc2dz",
+      "workspace_id": "ws_kit2532bcugmo2opqqxrkb7p",
+      "name": "main",
+      "created_at": "2026-07-16T14:30:00Z"
+    }
+  ],
+  "next_cursor": null,
+  "has_more": false
+}
+```
+
+## Unified balances
+
+`GET /v1/subaccounts/{id}/balances` returns the full, live balance set in one
+page — normalized across venues (USDC on Polymarket, USD on Kalshi):
+
+<CodeGroup>
+
+```bash cURL
+curl https://api.trymithril.com/v1/subaccounts/sub_.../balances \
+  -H "Authorization: Bearer $MITHRIL_API_KEY"
+```
+
+```python Python
+bal = s.get(f"{BASE}/v1/subaccounts/{sub_id}/balances").json()["data"]
+for b in bal:
+    print(b["asset"], b["available"], b["total"])
+```
+
+</CodeGroup>
+
+Each balance (`BalanceView`):
+
+```json
+{ "data": [ { "asset": "USDC", "total": "1042.50", "available": "1042.50" } ], "has_more": false }
+```
+
+## Create a subaccount
+
+`POST /v1/subaccounts` seeds the standard guardrails by default. Set
+`disable_guardrails: true` to opt out of all protection.
+
+```bash
+curl -X POST https://api.trymithril.com/v1/subaccounts \
+  -H "Authorization: Bearer $MITHRIL_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{ "name": "momentum-bot", "disable_guardrails": false }'
+```
+
+## Attach exchange credentials
+
+`PUT /v1/subaccounts/{id}/credentials`. The body depends on the venue — but
+`private_key` is always **write-only** and never returned by any endpoint.
+
+<CodeGroup>
+
+```json Polymarket
+{
+  "exchange": "polymarket",
+  "wallet_address": "0xabc...",
+  "private_key": "0x...",
+  "public_fields": {}
+}
+```
+
+```json Kalshi
+{
+  "exchange": "kalshi",
+  "api_key_id": "a1b2c3d4-...",
+  "private_key": "-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----",
+  "public_fields": {}
+}
+```
+
+</CodeGroup>
+
+<ParamField body="exchange" type="string" required>
+  `polymarket` or `kalshi`.
+</ParamField>
+<ParamField body="wallet_address" type="string">
+  Polymarket: your wallet address (the signing identity).
+</ParamField>
+<ParamField body="api_key_id" type="string">
+  Kalshi: your API key ID; `private_key` is its PEM-encoded RSA key.
+</ParamField>
+<ParamField body="private_key" type="string" required>
+  Write-only signing secret. Envelope-encrypted at rest, decrypted only in
+  memory to sign an order, never logged, never returned.
+</ParamField>
+
+<Warning>
+  Credentials are write-only. Once attached they are never returned by any
+  endpoint — every secret field is redacted in responses.
+</Warning>
+
+<Card title="Next: Market data" icon="chart-line" href="/guides/market-data">
+  Find markets and read the book before you trade.
+</Card>

@@ -1,0 +1,52 @@
+---
+title: "Idempotency"
+description: "Make order placement safe to retry."
+---
+
+Network calls fail halfway. A timeout doesn't tell you whether your order
+reached the exchange. To make retries safe, `POST /v1/orders` (and
+`POST /v1/complex_orders`) **require an `Idempotency-Key` header**.
+
+```
+Idempotency-Key: 3f9d1c2a-7b6e-4a1f-9c2d-8e5b0a1f2c3d
+```
+
+Send a unique key (a UUID is ideal) per logical order. If the same key arrives
+again — because you retried after a timeout — Mithril returns the **original**
+order instead of placing a second one.
+
+<CodeGroup>
+
+```bash cURL
+curl -X POST https://api.trymithril.com/v1/orders \
+  -H "Authorization: Bearer $MITHRIL_API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -d '{ "subaccount_id": "sub_...", "market_id": "mkt_...", "token_id": "...",
+        "action": "buy", "order_type": "limit", "quantity": "5", "price": "0.40" }'
+```
+
+```python Python
+import uuid
+
+def place(order_body):
+    return s.post(
+        f"{BASE}/v1/orders",
+        headers={"Idempotency-Key": str(uuid.uuid4())},
+        json=order_body,
+    ).json()
+```
+
+</CodeGroup>
+
+<Warning>
+  Reuse the **same** key when retrying the **same** order. Generating a fresh
+  key on retry defeats the protection and can place a duplicate.
+</Warning>
+
+## Rules
+
+- Scope: keys are scoped to your workspace and the request path.
+- A request without the header is rejected with `400` before it's forwarded.
+- Idempotency covers order **placement**. Cancellation is naturally idempotent —
+  cancelling an already-cancelled order is a no-op.
