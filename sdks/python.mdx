@@ -1,31 +1,46 @@
 ---
 title: "Python SDK"
-description: "The official Python client — typed, batteries-included."
+description: "The official Python client for Mithril — typed, batteries-included."
 ---
 
 The Python SDK wraps the gateway so you write trading logic, not HTTP. It
 handles auth, venue signing, idempotency keys, pagination, retries, and typed
-errors. The only configuration is an API key.
+[Pydantic](https://docs.pydantic.dev) responses. The only configuration is an
+API key.
 
-```bash
+## Installation
+
+<CodeGroup>
+
+```bash pip
 pip install trymithril
 ```
 
-## Quickstart
+```bash uv
+uv add trymithril
+```
+
+</CodeGroup>
+
+## Quick start
 
 ```python
 from trymithril import Mithril
 
-m = Mithril()  # reads MITHRIL_API_KEY (or pass api_key=...)
+client = Mithril()  # reads MITHRIL_API_KEY from the environment
 
-sub = m.subaccounts.list()[0]
-market = m.markets.search("world cup", limit=1)[0]
-ob = m.markets.orderbook(market.id)
+# Discover your subaccount — no IDs to hardcode
+sub = client.subaccounts.list()[0]
 
-order = m.orders.create(
+# Find a market and read the book
+market = client.markets.search("world cup", limit=1)[0]
+book = client.markets.orderbook(market.id)
+
+# Place a risk-checked order (idempotency key generated for you)
+order = client.orders.create(
     subaccount_id=sub.id,
     market_id=market.id,
-    token_id=ob.token_id,
+    token_id=book.token_id,
     action="buy",
     quantity="5",
     price="0.40",
@@ -33,24 +48,257 @@ order = m.orders.create(
 print(order.id, order.status)
 ```
 
-## Typed responses
+<Note>
+  Your exchange credentials never touch the SDK — you attach them once in the
+  dashboard, and Mithril signs orders server-side. The SDK only ever holds your
+  `mk_live_` / `mk_test_` key.
+</Note>
 
-Responses are [Pydantic](https://docs.pydantic.dev) models — autocomplete and
-validation included, unknown fields preserved so a new API field never breaks
-you:
+## The client
 
 ```python
-order.status                  # typed attribute
-preview.impact.fillable_qty   # nested models
-order.model_dump()            # plain dict when you need one
+from trymithril import Mithril
+
+client = Mithril(
+    api_key="mk_live_...",                  # or MITHRIL_API_KEY
+    base_url="https://api.trymithril.com",  # or MITHRIL_BASE_URL
+    timeout=15.0,
+    max_retries=2,                          # retries on 429
+)
 ```
 
-List endpoints return a `Page` (a list with `.has_more` / `.next_cursor`).
-`.iterate()` walks every page for you:
+Every resource hangs off the client: `client.subaccounts`, `client.markets`,
+`client.orders`, `client.complex_orders`, `client.risk_limits`, `client.risk`,
+`client.positions`, `client.fills`, `client.portfolio`, `client.receipts`,
+`client.analytics`.
+
+## Subaccounts
+
+Subaccounts isolate strategies — each with its own credentials, positions, and
+[risk limits](#guardrails). Most calls take a `subaccount_id`, so discover it
+rather than hardcoding.
 
 ```python
-for fill in m.fills.iterate():
-    print(fill.price, fill.quantity)
+subs = client.subaccounts.list()
+sub = subs[0]
+print(sub.id, sub.name)
+
+# Unified balances across venues (USDC on Polymarket, USD on Kalshi)
+for bal in client.subaccounts.balances(sub.id):
+    print(bal.asset, bal.available, "/", bal.total)
+
+# Create a new strategy subaccount
+momentum = client.subaccounts.create("momentum-bot")
+```
+
+Attach exchange credentials (write-only — never returned):
+
+```python
+# Polymarket
+client.subaccounts.attach_credentials(
+    sub.id, "polymarket", wallet_address="0x...", private_key="0x...",
+)
+# Kalshi (private_key is the PEM-encoded RSA key)
+client.subaccounts.attach_credentials(
+    sub.id, "kalshi", api_key_id="a1b2c3d4-...", private_key="-----BEGIN RSA PRIVATE KEY-----\n...",
+)
+```
+
+## Market data
+
+One normalized data plane across venues — prices are probabilities in `(0, 1)`,
+and one `mkt_` id maps the same event on both.
+
+```python
+# Search (paginated)
+markets = client.markets.search("fed rate cut", limit=5)
+market = markets[0]
+print(market.question, market.exchange)
+
+# The outcome tokens you can trade
+for outcome in market.outcomes:
+    print(outcome.label, outcome.token_id, outcome.price)
+
+# Live order book
+book = client.markets.orderbook(market.id)
+best_bid = book.bids[0].price if book.bids else None
+best_ask = book.asks[0].price if book.asks else None
+
+# Price history
+for point in client.markets.prices(market.id, limit=50).points:
+    print(point.timestamp, point.price)
+```
+
+<ParamField path="query" type="str" required>
+  Free-text search across both venues.
+</ParamField>
+<ParamField path="exchange" type="str">
+  Filter to `"polymarket"` or `"kalshi"`.
+</ParamField>
+<ParamField path="status" type="str">
+  Filter by market status (e.g. `"open"`).
+</ParamField>
+<ParamField path="limit" type="int" default="50">
+  Page size, max 200.
+</ParamField>
+
+## Orders
+
+Place a limit or market order. Mithril risk-checks it, signs it, submits it, and
+maps the venue's response to one status model. The `idempotency-key` is attached
+automatically, so a retry after a timeout never double-places.
+
+```python
+order = client.orders.create(
+    subaccount_id=sub.id,
+    market_id=market.id,
+    token_id=book.token_id,
+    action="buy",          # "buy" | "sell"
+    order_type="limit",    # "limit" | "market"
+    quantity="5",          # decimal string of shares
+    price="0.40",          # probability in (0, 1], required for limit
+)
+
+# Track it
+order = client.orders.get(order.id)
+print(order.status, order.traded_qty, "/", order.quantity)
+
+# Cancel
+client.orders.cancel(order.id)
+client.orders.cancel_all(sub.id)   # kill switch for one subaccount
+```
+
+<ParamField path="idempotency_key" type="str">
+  Pass your own stable key for end-to-end safe retries across process restarts.
+  Omit it and the SDK generates one per call.
+</ParamField>
+
+Order statuses: `submitted`, `open`, `partial`, `filled`, `cancelled`,
+`rejected`. A `rejected` order carries a `reject_reason` (often a guardrail).
+
+## Smart execution
+
+Thin books punish size. Preview an order's impact, then let Mithril **work** it
+under a slippage cap and hand you a transaction-cost report.
+
+```python
+preview = client.complex_orders.preview(
+    market_id=market.id, token_id=book.token_id, action="buy", quantity="500",
+)
+print(preview.impact.fillable_qty, "@", preview.impact.avg_price,
+      f"({preview.impact.slippage_bps} bps)")
+print("recommended:", preview.recommended_plan.strategy,
+      "—", preview.recommended_plan.reason)
+```
+
+Create a worked order by choosing a `type` and passing its params. Four
+strategies:
+
+<CodeGroup>
+
+```python Adaptive
+# "Just get me best execution" — balances urgency vs impact
+order = client.complex_orders.create(
+    subaccount_id=sub.id, market_id=market.id, token_id=book.token_id,
+    type="adaptive", action="buy", total_quantity="500",
+    adaptive={"limit_price": "0.62", "urgency": "low", "max_duration_s": 300},
+)
+```
+
+```python Iceberg
+# Show a slice at a time so you don't reveal the whole hand
+order = client.complex_orders.create(
+    subaccount_id=sub.id, market_id=market.id, token_id=book.token_id,
+    type="iceberg", action="buy", total_quantity="500",
+    iceberg={"displayed_qty": "125", "limit_price": "0.62", "reload_delay_s": 2},
+)
+```
+
+```python Peg
+# Rest at/inside the spread, repegging within a band
+order = client.complex_orders.create(
+    subaccount_id=sub.id, market_id=market.id, token_id=book.token_id,
+    type="peg", action="buy", total_quantity="500",
+    peg={"min_price": "0.55", "max_price": "0.65", "post_only": True},
+)
+```
+
+```python Smart taker
+# Sweep marketable clips only when enough liquidity sits within the limit
+order = client.complex_orders.create(
+    subaccount_id=sub.id, market_id=market.id, token_id=book.token_id,
+    type="smart_taker", action="buy", total_quantity="500",
+    smart_taker={"limit_price": "0.62", "min_qty": "50"},
+)
+```
+
+</CodeGroup>
+
+Watch it work, then read the receipt:
+
+```python
+# Child orders + live queue positions
+for child in client.complex_orders.children(order.id).children:
+    print(child.status, child.traded_qty, "@", child.average_price)
+
+client.complex_orders.cancel(order.id)   # cancel the remainder
+
+# Transaction-cost analysis: your fills vs arrival, estimate, and a naive sweep
+report = client.complex_orders.execution_report(order.id)
+print("saved", report.savings_vs_naive, f"({report.savings_vs_naive_bps} bps)")
+```
+
+<Note>
+  Conditional orders (take-profit / stop-loss / stop) are on the roadmap and are
+  rejected at submission today, so you never get a plan nothing will act on.
+</Note>
+
+## Guardrails
+
+Set the limits every order is checked against — server-side, before it reaches
+the venue.
+
+```python
+# Read effective limits for a subaccount
+limits = client.risk_limits.get(sub.id)
+print(limits.max_order_notional, limits.kill_switch)
+
+# Update them (only the fields you pass change)
+client.risk_limits.update(
+    sub.id,
+    max_order_notional="250",
+    max_daily_loss="1000",
+    slippage_bps=300,
+)
+
+# Flip the kill switch to halt all new orders on a subaccount
+client.risk_limits.update(sub.id, kill_switch=True)
+```
+
+Fields: `max_order_notional`, `max_position_per_market`, `max_total_notional`,
+`slippage_bps`, `max_concentration_bps`, `max_open_orders`, `max_daily_loss`,
+`kill_switch`. Notional fields are decimal strings; `"0"` means unlimited.
+
+## Risk & portfolio
+
+One call each for exposure, P&L, fills, positions, and portfolio — per
+subaccount or across the whole workspace.
+
+```python
+stats = client.risk.stats(sub.id)          # omit the id for workspace-wide
+print(stats.gross_exposure, stats.unrealized_pnl, stats.largest_position_pct_bps)
+
+for point in client.risk.pnl_history().points:
+    print(point.date, point.realized_pnl, point.fees)
+
+for fill in client.fills.list(limit=50):
+    print(fill.side, fill.quantity, "@", fill.price, "fee", fill.fee)
+
+for pos in client.positions.list():
+    print(pos.market_id, pos.quantity, "avg", pos.avg_price)
+
+pf = client.portfolio.get()
+print(pf.position_count, "positions, cost basis", pf.total_cost_basis)
 ```
 
 ## Errors
@@ -59,56 +307,57 @@ Failed calls raise typed exceptions carrying `code`, `message`, and
 `request_id`:
 
 ```python
-from trymithril import RiskLimitExceeded
+from trymithril import RiskLimitExceeded, RateLimitError, MithrilError
 
 try:
-    m.orders.create(...)
+    client.orders.create(...)
 except RiskLimitExceeded as e:
     # a guardrail protected you — the order never reached the venue
-    print(e.code, e.message)
+    print("blocked:", e.message)
+except RateLimitError:
+    ...  # 429s are already auto-retried; raised only after max_retries
+except MithrilError as e:
+    print(f"[{e.status}] {e.code}: {e.message} ({e.request_id})")
 ```
 
-`MithrilError` is the base; subclasses include `AuthenticationError`,
-`NotFoundError`, `BadRequestError`, `RiskLimitExceeded`, `RateLimitError`, and
-`ServerError`. `429`s are retried automatically.
+| Exception | Status | When |
+| --- | --- | --- |
+| `AuthenticationError` | 401 | Missing, invalid, or revoked key |
+| `PermissionError` | 403 | Authenticated but not allowed |
+| `NotFoundError` | 404 | Resource not in your workspace |
+| `BadRequestError` | 400 / 422 | Malformed request or invalid argument |
+| `RiskLimitExceeded` | 409 | A guardrail rejected the order |
+| `RateLimitError` | 429 | Rate limited (auto-retried first) |
+| `ServerError` | 5xx | Upstream / venue failure |
 
-## Idempotency, handled for you
+## Pagination
 
-`orders.create` and `complex_orders.create` attach an `idempotency-key`
-automatically, so a retry after a timeout never double-places. For safe retries
-across process restarts, pass your own stable key:
+List endpoints return a `Page` — a list that also carries `.has_more` and
+`.next_cursor`. Use `.iterate()` to walk every page automatically:
 
 ```python
-m.orders.create(..., idempotency_key="my-strategy-signal-42")
+# One page
+page = client.fills.list(limit=100)
+print(len(page), page.has_more, page.next_cursor)
+
+# All pages, lazily
+for fill in client.fills.iterate():
+    process(fill)
 ```
 
-## API surface
+`iterate()` is available on `markets`, `orders`, `positions`, and `fills`.
 
-| Namespace | Methods |
-|---|---|
-| `m.subaccounts` | `list`, `create`, `get`, `delete`, `balances`, `attach_credentials`, `delete_credentials` |
-| `m.markets` | `search`, `iterate`, `get`, `orderbook`, `prices`, `match` |
-| `m.orders` | `create`, `list`, `iterate`, `get`, `cancel`, `cancel_all` |
-| `m.complex_orders` | `preview`, `create`, `list`, `get`, `children`, `execution_report`, `cancel` |
-| `m.risk_limits` | `get`, `update` |
-| `m.risk` | `stats`, `pnl_history` |
-| `m.positions` | `list`, `iterate` |
-| `m.fills` | `list`, `iterate` |
-| `m.portfolio` | `get` |
-| `m.receipts` | `list` |
-| `m.analytics` | `execution` |
+## Responses
 
-## Configuration
+Responses are Pydantic models — typed attributes, validation, and unknown fields
+preserved so a new API field never breaks you:
 
 ```python
-Mithril(
-    api_key="mk_live_...",                  # or MITHRIL_API_KEY
-    base_url="https://api.trymithril.com",  # or MITHRIL_BASE_URL
-    timeout=15.0,
-    max_retries=2,
-)
+order.status                  # typed attribute
+preview.impact.fillable_qty   # nested models
+order.model_dump()            # plain dict when you need one
 ```
 
 <Card title="Runnable examples" icon="play" href="/quickstart">
-  Six scripts — one per stack layer — all built on the SDK.
+  Six scripts — one per stack layer — all built on this SDK.
 </Card>

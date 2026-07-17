@@ -3,20 +3,17 @@ title: "API reference"
 description: "Every endpoint the gateway serves, with a live, machine-generated spec."
 ---
 
-The complete, always-current reference — every path, method, auth requirement,
-and rate-limit class — is generated directly from the gateway's route table and
-served as an interactive explorer and an OpenAPI 3.1 document. Request and
-response **contracts** (field-by-field JSON) live in the [guides](/guides/orders),
-alongside worked examples for each endpoint.
+Every endpoint is documented in the **Endpoints** section of this tab — an
+interactive reference with request/response schemas and a "try it" console,
+generated directly from the gateway's route table so it can't drift. Request and
+response **contracts** (field-by-field JSON with worked examples) also live in
+the [guides](/guides/orders).
 
-<CardGroup cols={2}>
-  <Card title="Interactive explorer" icon="code" href="https://api.trymithril.com/docs">
-    Browse and read every endpoint (Redoc).
-  </Card>
-  <Card title="OpenAPI spec" icon="file-code" href="https://api.trymithril.com/openapi.json">
-    Import into Postman, Insomnia, or your own codegen.
-  </Card>
-</CardGroup>
+<Note>
+  Open **Endpoints** in the sidebar to browse every operation with schemas and a
+  live request console. Prefer the [Python SDK](/sdks/python) for real
+  integrations — it wraps these endpoints with typed models and idempotency.
+</Note>
 
 ## Endpoint map
 

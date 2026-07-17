@@ -54,10 +54,14 @@
         "tab": "API reference",
         "groups": [
           {
-            "group": "Reference",
+            "group": "Overview",
             "pages": [
               "api-reference/overview"
             ]
+          },
+          {
+            "group": "Endpoints",
+            "openapi": "api-reference/openapi.json"
           }
         ]
       }
@@ -65,18 +69,13 @@
     "global": {
       "anchors": [
         {
-          "anchor": "API explorer",
-          "href": "https://api.trymithril.com/docs",
-          "icon": "code"
-        },
-        {
           "anchor": "Dashboard",
           "href": "https://app.trymithril.com",
           "icon": "gauge"
         },
         {
           "anchor": "Book a call",
-          "href": "https://calendly.com/thekarlg",
+          "href": "https://cal.com/karl-mithril/demo",
           "icon": "phone"
         }
       ]
@@ -90,7 +89,7 @@
     "links": [
       {
         "label": "Book a call",
-        "href": "https://calendly.com/thekarlg"
+        "href": "https://cal.com/karl-mithril/demo"
       }
     ],
     "primary": {
